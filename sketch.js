@@ -24,7 +24,7 @@ function setupCapture() {
 }
 
 function setupPreRecordedVideo() {
-    preRecordedVideo = createVideo(['ref_3.mp4']);
+    preRecordedVideo = createVideo(['ref_4.mp4']);
     preRecordedVideo.loop();
     preRecordedVideo.hide();
 
@@ -136,6 +136,40 @@ function drawPoses(pose, skeleton, xOffset = 0) {
 }
 
 
+
+//... [Your code remains unchanged up to the getJointAngles function]
+
+function getJointAnglesDifference(pose1, pose2) {
+    const angles1 = getJointAngles(pose1);
+    const angles2 = getJointAngles(pose2);
+
+    return {
+        rightElbow: Math.abs(angles1.rightElbow - angles2.rightElbow),
+        leftElbow: Math.abs(angles1.leftElbow - angles2.leftElbow),
+        rightShoulder: Math.abs(angles1.rightShoulder - angles2.rightShoulder),
+        leftShoulder: Math.abs(angles1.leftShoulder - angles2.leftShoulder),
+        rightKnee: Math.abs(angles1.rightKnee - angles2.rightKnee),
+        leftKnee: Math.abs(angles1.leftKnee - angles2.leftKnee)
+    };
+}
+
+function provideFeedback(differences) {
+    let feedbackMessage = '';
+    const threshold = 10;  // Set a threshold for angle difference
+
+    for (let joint in differences) {
+        if (differences[joint] > threshold) {
+            feedbackMessage += `${joint} difference is too large (${differences[joint].toFixed(2)}°).\n`;
+        }
+    }
+
+    if (feedbackMessage) {
+        fill(255, 0, 0);  // Red color for feedback text
+        textSize(16);
+        text(feedbackMessage, 10, 20);  // Adjust position as necessary
+    }
+}
+
 function draw() {
     image(capture, 0, 0);  // Live video on the left
 
@@ -144,5 +178,22 @@ function draw() {
     
     drawPoses(singlePoseLive, skeletonLive);
     drawPoses(singlePosePreRecorded, skeletonPreRecorded, xOffset); 
+
+    if (singlePoseLive && singlePosePreRecorded) {
+        const differences = getJointAnglesDifference(singlePoseLive, singlePosePreRecorded);
+        provideFeedback(differences);
+    }
 }
+
+
+
+// function draw() {
+//     image(capture, 0, 0);  // Live video on the left
+
+//     let xOffset = VIDEO_WIDTH; // Starting position for pre-recorded video on the right
+//     image(preRecordedVideo, xOffset, 0);  
+    
+//     drawPoses(singlePoseLive, skeletonLive);
+//     drawPoses(singlePosePreRecorded, skeletonPreRecorded, xOffset); 
+// }
 
