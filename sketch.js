@@ -1,95 +1,148 @@
-const MAX_WIDTH = 640;
-const MAX_HEIGHT = 480;
+const CONFIDENCE_THRESHOLD = 0.6;
+const VIDEO_WIDTH = 640;
+const VIDEO_HEIGHT = 360;
 
-let canvasWidth;
-let canvasHeight;
-let preRecordedVideo;
-let posenet;
-let poses = [];
+let capture;  // Live video
+let preRecordedVideo; // Pre-recorded video
+let posenetLive, posenetPreRecorded; // Separate PoseNet models for live and pre-recorded videos
+let singlePoseLive, singlePosePreRecorded; // Poses for live and pre-recorded videos
+let skeletonLive, skeletonPreRecorded;
+let actor_img, specs, smoke;
 
-function preload() {
-    preRecordedVideo = createVideo(['ref_3.mp4'], videoLoadCallback);
+function setup() {
+    createCanvas(VIDEO_WIDTH * 2, VIDEO_HEIGHT); // Double the width for side-by-side videos
+    setupCapture();
+    setupPreRecordedVideo();
+    setupPoseNet();
+    
 }
 
-function videoLoadCallback() {
-    // Calculate the aspect ratio of the video
-    let videoAspectRatio = preRecordedVideo.width / preRecordedVideo.height;
-
-    // Calculate canvas dimensions based on the video's aspect ratio
-    canvasWidth = MAX_WIDTH;
-    canvasHeight = canvasWidth / videoAspectRatio;
-
-    // Ensure canvas dimensions don't exceed maximum values
-    if (canvasHeight > MAX_HEIGHT) {
-        canvasHeight = MAX_HEIGHT;
-        canvasWidth = videoAspectRatio * MAX_HEIGHT;
-    }
-
-    // Adjust the size of the video element to match the canvas dimensions
-    preRecordedVideo.size(canvasWidth, canvasHeight);
-
-    // Setup canvas and rest of the components
-    setupCanvas();
+function setupCapture() {
+    capture = createCapture(VIDEO);
+    capture.size(VIDEO_WIDTH, VIDEO_HEIGHT);
+    capture.hide();
 }
 
-function setupCanvas() {
-    createCanvas(canvasWidth, canvasHeight);
+function setupPreRecordedVideo() {
+    preRecordedVideo = createVideo(['ref_3.mp4']);
     preRecordedVideo.loop();
     preRecordedVideo.hide();
 
-    posenet = ml5.poseNet(preRecordedVideo, modelLoaded);
-    posenet.on('pose', gotPoses);
+    // Wait for the video to load before initializing PoseNet
+    preRecordedVideo.elt.onloadeddata = () => {
+        videoLoadCallback();
+        // Now that the video data has loaded, we can safely set up PoseNet
+        if (!posenetPreRecorded) {
+            posenetPreRecorded = ml5.poseNet(preRecordedVideo, () => console.log('Pre-recorded PoseNet Model Loaded'));
+            posenetPreRecorded.on('pose', receivedPosesPreRecorded);
+        }
+    };
 }
 
-function modelLoaded() {
-    console.log('PoseNet Model Loaded');
+
+function videoLoadCallback() {
+    let videoAspectRatio = preRecordedVideo.width / preRecordedVideo.height;
+    preRecordedVideo.size(VIDEO_HEIGHT * videoAspectRatio, VIDEO_HEIGHT);
 }
 
-function gotPoses(results) {
-    console.log("Received Poses:", results);  // Log the received poses
-    poses = results;
+function setupPoseNet() {
+    posenetLive = ml5.poseNet(capture, () => console.log('Live PoseNet Model Loaded'));
+    posenetLive.on('pose', receivedPosesLive);
+
+    posenetPreRecorded = ml5.poseNet(preRecordedVideo, () => console.log('Pre-recorded PoseNet Model Loaded'));
+    posenetPreRecorded.on('pose', receivedPosesPreRecorded);
 }
 
+function receivedPosesLive(poses) {
+    if (poses.length > 0) {
+        singlePoseLive = poses[0].pose;
+        skeletonLive = poses[0].skeleton;
+    }
+}
 
-function drawKeypoints(pose) {
-    fill(255, 0, 0);  // Red for keypoints
-    for (let j = 0; j < pose.keypoints.length; j++) {
-        let keypoint = pose.keypoints[j];
-        ellipse(keypoint.position.x, keypoint.position.y, 10);
+function receivedPosesPreRecorded(poses) {
+    if (poses.length > 0) {
+        singlePosePreRecorded = poses[0].pose;
+        skeletonPreRecorded = poses[0].skeleton;
+    }
+}
+
+function calculateAngle(A, B, C) {
+    const a = dist(B.x, B.y, C.x, C.y);
+    const b = dist(A.x, A.y, C.x, C.y);
+    const c = dist(A.x, A.y, B.x, B.y);
+    const angleRad = Math.acos((a*a + b*b - c*c) / (2*a*b));
+    const angleDeg = angleRad * (180 / Math.PI);
+    return angleDeg;
+}
+
+function getJointAngles(pose) {
+    const keypoints = pose.keypoints;
+    return {
+        rightElbow: calculateAngle(keypoints[6].position, keypoints[8].position, keypoints[10].position),
+        leftElbow: calculateAngle(keypoints[5].position, keypoints[7].position, keypoints[9].position),
+        rightShoulder: calculateAngle(keypoints[12].position, keypoints[6].position, keypoints[8].position),
+        leftShoulder: calculateAngle(keypoints[11].position, keypoints[5].position, keypoints[7].position),
+        rightKnee: calculateAngle(keypoints[12].position, keypoints[14].position, keypoints[16].position),
+        leftKnee: calculateAngle(keypoints[11].position, keypoints[13].position, keypoints[15].position)
+    };
+}
+
+function drawKeypoints(pose, xOffset) {
+    fill(255, 0, 0);
+    const dotSize = 10;  
+    for (let i = 0; i < pose.keypoints.length; i++) {
+        const keypoint = pose.keypoints[i];
+        if (keypoint.score > CONFIDENCE_THRESHOLD) {
+            ellipse(keypoint.position.x + xOffset, keypoint.position.y, dotSize);
+        }
+    }
+}
+
+function drawSkeleton(skeleton, xOffset) {
+    stroke(255, 255, 255);
+    strokeWeight(5);
+    for (let j = 0; j < skeleton.length; j++) {
+        const startPoint = skeleton[j][0];
+        const endPoint = skeleton[j][1];
+        if (startPoint.score > CONFIDENCE_THRESHOLD && endPoint.score > CONFIDENCE_THRESHOLD) {
+            line(startPoint.position.x + xOffset, startPoint.position.y, endPoint.position.x + xOffset, endPoint.position.y);
+        }
     }
 }
 
 
+function drawPoses(pose, skeleton, xOffset = 0) {
+    if (pose) {
+        drawKeypoints(pose, xOffset);
+        drawSkeleton(skeleton, xOffset);
 
-function drawSkeleton() {
-    for (let i = 0; i < poses.length; i++) {
-        let pose = poses[i].pose;
+        const angles = getJointAngles(pose);
 
-        // Check if the skeleton property exists and has data
-        if (!pose.skeleton || pose.skeleton.length === 0) {
-            continue;
-        }
+        // Set text properties
+        fill(0, 0, 255); // Blue color
+        textSize(16);
+        stroke(255); // White stroke
+        strokeWeight(3); // Adjust the stroke weight as needed
 
-        let skeleton = pose.skeleton;
-        for (let j = 0; j < skeleton.length; j++) {
-            let partA = skeleton[j][0];
-            let partB = skeleton[j][1];
-            stroke(255, 0, 0); // Red color for skeleton
-            strokeWeight(4);   // Increase the weight of the stroke
-            line(partA.position.x, partA.position.y, partB.position.x, partB.position.y);
-        }
+        // Display angles at joint positions
+        text(`${angles.rightElbow.toFixed(2)}°`, pose.keypoints[8].position.x + xOffset, pose.keypoints[8].position.y);
+        text(`${angles.leftElbow.toFixed(2)}°`, pose.keypoints[7].position.x + xOffset, pose.keypoints[7].position.y);
+        text(`${angles.rightShoulder.toFixed(2)}°`, pose.keypoints[6].position.x + xOffset, pose.keypoints[6].position.y);
+        text(`${angles.leftShoulder.toFixed(2)}°`, pose.keypoints[5].position.x + xOffset, pose.keypoints[5].position.y);
+        text(`${angles.rightKnee.toFixed(2)}°`, pose.keypoints[14].position.x + xOffset, pose.keypoints[14].position.y);
+        text(`${angles.leftKnee.toFixed(2)}°`, pose.keypoints[13].position.x + xOffset, pose.keypoints[13].position.y);
     }
 }
-
 
 
 function draw() {
-    background(220);  // Set the background color
-    image(preRecordedVideo, 0, 0, canvasWidth, canvasHeight);
+    image(capture, 0, 0);  // Live video on the left
 
-    // Draw detected poses on the video
-    for (let i = 0; i < poses.length; i++) {
-        drawKeypoints(poses[i].pose);
-        drawSkeleton(poses[i].pose);
-    }
+    let xOffset = VIDEO_WIDTH; // Starting position for pre-recorded video on the right
+    image(preRecordedVideo, xOffset, 0);  
+    
+    drawPoses(singlePoseLive, skeletonLive);
+    drawPoses(singlePosePreRecorded, skeletonPreRecorded, xOffset); 
 }
+
