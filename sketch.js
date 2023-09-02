@@ -2,20 +2,42 @@ const CONFIDENCE_THRESHOLD = 0.6;
 const VIDEO_WIDTH = 640;
 const VIDEO_HEIGHT = 360;
 
+const UPDATE_INTERVAL = 30;  // Update feedback every 30 frames, adjust as needed
+const INACTIVITY_LIMIT = 60;  // 2 seconds at 30fps
+const ACTIVITY_THRESHOLD = 10;  // This is just an example value, you may need to adjust it based on your needs.
+const THRESHOLD = 30;  // Threshold of 10 degrees difference for max accuracy
+
 let capture;  // Live video
 let preRecordedVideo; // Pre-recorded video
 let posenetLive, posenetPreRecorded; // Separate PoseNet models for live and pre-recorded videos
 let singlePoseLive, singlePosePreRecorded; // Poses for live and pre-recorded videos
 let skeletonLive, skeletonPreRecorded;
-let actor_img, specs, smoke;
+let frameCounter = 0;
+let inactiveFrames = 0;
+let feedbackMessage = "Waiting for pose detection..."; 
+
+let startButton;
+
+let activityStarted = false;
+
 
 function setup() {
     createCanvas(VIDEO_WIDTH * 2, VIDEO_HEIGHT); // Double the width for side-by-side videos
     setupCapture();
     setupPreRecordedVideo();
     setupPoseNet();
-    
+
+    startButton = createButton('Start');
+    startButton.position(VIDEO_WIDTH, VIDEO_HEIGHT + 20);
+    startButton.mousePressed(startActivity);
 }
+
+
+function startActivity() {
+    activityStarted = true;
+    startButton.hide();
+}
+
 
 function setupCapture() {
     capture = createCapture(VIDEO);
@@ -24,9 +46,10 @@ function setupCapture() {
 }
 
 function setupPreRecordedVideo() {
-    preRecordedVideo = createVideo(['ref_4.mp4']);
+    preRecordedVideo = createVideo(['ref_3.mp4']);
     preRecordedVideo.loop();
     preRecordedVideo.hide();
+    preRecordedVideo.speed(0.5); 
 
     // Wait for the video to load before initializing PoseNet
     preRecordedVideo.elt.onloadeddata = () => {
@@ -39,6 +62,24 @@ function setupPreRecordedVideo() {
     };
 }
 
+
+function receivedPosesLive(poses) {
+    console.log("Live Poses Detected:", poses);
+    if (poses.length > 0) {
+        singlePoseLive = poses[0].pose;
+        skeletonLive = poses[0].skeleton;
+    }
+}
+
+
+function receivedPosesPreRecorded(poses) {
+    console.log("Pre-recorded Poses Detected:", poses);
+
+    if (poses.length > 0) {
+        singlePosePreRecorded = poses[0].pose;
+        skeletonPreRecorded = poses[0].skeleton;
+    }
+}
 
 function videoLoadCallback() {
     let videoAspectRatio = preRecordedVideo.width / preRecordedVideo.height;
@@ -53,19 +94,8 @@ function setupPoseNet() {
     posenetPreRecorded.on('pose', receivedPosesPreRecorded);
 }
 
-function receivedPosesLive(poses) {
-    if (poses.length > 0) {
-        singlePoseLive = poses[0].pose;
-        skeletonLive = poses[0].skeleton;
-    }
-}
 
-function receivedPosesPreRecorded(poses) {
-    if (poses.length > 0) {
-        singlePosePreRecorded = poses[0].pose;
-        skeletonPreRecorded = poses[0].skeleton;
-    }
-}
+
 
 function calculateAngle(A, B, C) {
     const a = dist(B.x, B.y, C.x, C.y);
@@ -74,18 +104,6 @@ function calculateAngle(A, B, C) {
     const angleRad = Math.acos((a*a + b*b - c*c) / (2*a*b));
     const angleDeg = angleRad * (180 / Math.PI);
     return angleDeg;
-}
-
-function getJointAngles(pose) {
-    const keypoints = pose.keypoints;
-    return {
-        rightElbow: calculateAngle(keypoints[6].position, keypoints[8].position, keypoints[10].position),
-        leftElbow: calculateAngle(keypoints[5].position, keypoints[7].position, keypoints[9].position),
-        rightShoulder: calculateAngle(keypoints[12].position, keypoints[6].position, keypoints[8].position),
-        leftShoulder: calculateAngle(keypoints[11].position, keypoints[5].position, keypoints[7].position),
-        rightKnee: calculateAngle(keypoints[12].position, keypoints[14].position, keypoints[16].position),
-        leftKnee: calculateAngle(keypoints[11].position, keypoints[13].position, keypoints[15].position)
-    };
 }
 
 function drawKeypoints(pose, xOffset) {
@@ -123,7 +141,7 @@ function drawPoses(pose, skeleton, xOffset = 0) {
         fill(0, 0, 255); // Blue color
         textSize(16);
         stroke(255); // White stroke
-        strokeWeight(3); // Adjust the stroke weight as needed
+        strokeWeight(0); // Adjust the stroke weight as needed
 
         // Display angles at joint positions
         text(`${angles.rightElbow.toFixed(2)}°`, pose.keypoints[8].position.x + xOffset, pose.keypoints[8].position.y);
@@ -135,9 +153,17 @@ function drawPoses(pose, skeleton, xOffset = 0) {
     }
 }
 
-
-
-//... [Your code remains unchanged up to the getJointAngles function]
+function getJointAngles(pose) {
+    const keypoints = pose.keypoints;
+    return {
+        rightElbow: calculateAngle(keypoints[6].position, keypoints[8].position, keypoints[10].position),
+        leftElbow: calculateAngle(keypoints[5].position, keypoints[7].position, keypoints[9].position),
+        rightShoulder: calculateAngle(keypoints[12].position, keypoints[6].position, keypoints[8].position),
+        leftShoulder: calculateAngle(keypoints[11].position, keypoints[5].position, keypoints[7].position),
+        rightKnee: calculateAngle(keypoints[12].position, keypoints[14].position, keypoints[16].position),
+        leftKnee: calculateAngle(keypoints[11].position, keypoints[13].position, keypoints[15].position)
+    };
+}
 
 function getJointAnglesDifference(pose1, pose2) {
     const angles1 = getJointAngles(pose1);
@@ -153,24 +179,81 @@ function getJointAnglesDifference(pose1, pose2) {
     };
 }
 
-function provideFeedback(differences) {
-    let feedbackMessage = '';
-    const threshold = 10;  // Set a threshold for angle difference
 
+
+function isUserInactive(differences) {
+    let totalDifference = 0;
     for (let joint in differences) {
-        if (differences[joint] > threshold) {
-            feedbackMessage += `${joint} difference is too large (${differences[joint].toFixed(2)}°).\n`;
-        }
+        totalDifference += differences[joint];
     }
+    return totalDifference < ACTIVITY_THRESHOLD;
+}
 
-    if (feedbackMessage) {
-        fill(255, 0, 0);  // Red color for feedback text
-        textSize(16);
-        text(feedbackMessage, 10, 20);  // Adjust position as necessary
+function getAccuracyPercentage(deviation, threshold) {
+    let accuracy = (1 - (deviation / threshold)) * 100;
+    return Math.max(accuracy, 0);  // If the deviation exceeds the threshold, set accuracy to 0%
+}
+
+
+function updateFeedback() {
+    if (singlePoseLive && singlePosePreRecorded) {
+        const differences = getJointAnglesDifference(singlePoseLive, singlePosePreRecorded);
+
+        if (isUserInactive(differences)) {
+            inactiveFrames++;
+            if (inactiveFrames >= INACTIVITY_LIMIT) {
+                feedbackMessage = "Please follow the activity as shown in the video!";
+                return;  // If the user is inactive, we don't need to compute other feedbacks
+            }
+        } else {
+            inactiveFrames = 0;  // Reset inactivity counter if there's activity
+        }
+
+        let maxDifferenceJoint = null;
+        let maxDifferenceValue = 0;
+        for (let joint in differences) {
+            if (differences[joint] > maxDifferenceValue) {
+                maxDifferenceJoint = joint;
+                maxDifferenceValue = differences[joint];
+            }
+        }
+
+        let accuracy = getAccuracyPercentage(maxDifferenceValue, THRESHOLD);
+        
+        // Check if accuracy is below threshold and prompt user
+        if (accuracy < 50) {
+            feedbackMessage = "Please follow the activity as shown in the video!";
+        } else if (maxDifferenceValue > THRESHOLD) {
+            feedbackMessage = `Adjust ${maxDifferenceJoint}. You are ${accuracy.toFixed(2)}% accurate.`;
+        } else {
+            feedbackMessage = "Well Done!";
+        }
     }
 }
 
+
+function drawFeedback() {
+    if (feedbackMessage === "Well Done!") {
+        fill(0, 255, 0); // Red color
+    } else {
+        fill(255, 0, 0); // Yellow color
+    }
+    textSize(20);
+    text(feedbackMessage, 10, VIDEO_HEIGHT - 30);
+}
+
+
+
+
 function draw() {
+    // Check if the activity has started
+    if (!activityStarted) {
+        fill(255, 0, 0); // Red color
+        textSize(20);
+        text("Press 'Start' when you're ready!", 10, VIDEO_HEIGHT - 10);
+        return;  // Exit the draw loop early if the activity hasn't started
+    }
+
     image(capture, 0, 0);  // Live video on the left
 
     let xOffset = VIDEO_WIDTH; // Starting position for pre-recorded video on the right
@@ -179,21 +262,25 @@ function draw() {
     drawPoses(singlePoseLive, skeletonLive);
     drawPoses(singlePosePreRecorded, skeletonPreRecorded, xOffset); 
 
-    if (singlePoseLive && singlePosePreRecorded) {
-        const differences = getJointAnglesDifference(singlePoseLive, singlePosePreRecorded);
-        provideFeedback(differences);
+    frameCounter++;
+
+    if (frameCounter >= UPDATE_INTERVAL) {
+        updateFeedback();
+        frameCounter = 0;
     }
+
+    drawFeedback();
 }
 
 
 
-// function draw() {
-//     image(capture, 0, 0);  // Live video on the left
 
-//     let xOffset = VIDEO_WIDTH; // Starting position for pre-recorded video on the right
-//     image(preRecordedVideo, xOffset, 0);  
-    
-//     drawPoses(singlePoseLive, skeletonLive);
-//     drawPoses(singlePosePreRecorded, skeletonPreRecorded, xOffset); 
-// }
+
+
+
+
+
+
+
+
 
