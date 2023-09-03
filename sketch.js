@@ -46,7 +46,7 @@ function setupCapture() {
 }
 
 function setupPreRecordedVideo() {
-    preRecordedVideo = createVideo(['ref_3.mp4']);
+    preRecordedVideo = createVideo(['ref_1.mp4']);
     preRecordedVideo.loop();
     preRecordedVideo.hide();
     preRecordedVideo.speed(0.5); 
