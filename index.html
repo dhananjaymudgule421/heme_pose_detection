@@ -1,17 +1,116 @@
-<html>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Human Pose Estimation</title>
+    <style>
+        #video-container {
+            display: flex;
+            justify-content: center;
+            position: relative;
+        }
+
+        .video-wrapper {
+            position: relative;
+            margin: 10px;
+        }
+
+        canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            pointer-events: none; /* Ensures the video controls can still be used */
+            z-index: 2;
+        }
+
+        video {
+            position: relative;
+            z-index: 1;
+            border: 1px solid black;
+        }
+
+        #feedback {
+            color: red;
+            z-index: 3;
+            position: relative; /* changing from absolute to relative */
+            margin-top: 40px;   /* Add space above the feedback */
+            left: 10px;         /* Adjust as necessary */
+        }
+
+        #progressBar {
+            transition: width 0.5s ease; /* Adjust the duration (0.5s) as needed */
+        }
+
+
+
+
+    </style>
+</head>
+<body>
+    <h1>Human Pose Estimation</h1>
+
+    <div id="progressContainer" style="width:100%; height: 30px; border: 1px solid black;">
+        <div id="progressBar" style="height: 100%; width: 0%; background-color: green;"></div>
+    </div>
+
+    <p id="feedback" style="color: red; z-index: 3; position: absolute; top: 10px; left: 10px;"></p> <!-- Feedback on top of live feed -->
+
+    
+
+    <div id="video-container">
+        <div class="video-wrapper">
+            <canvas id="canvas-webcam" width="640" height="480"></canvas>
+            <video id="webcam" width="640" height="480" autoplay playsinline></video>
+        </div>
+        <div class="video-wrapper">
+            <canvas id="canvas-prerecorded" width="640" height="480"></canvas>
+            <video id="prerecorded" width="640" height="480" controls playsinline></video>
+        </div>
+    </div>
+
+    <select id="videoSelector">
+        <option value="ref_1.mp4">Video 1</option>
+        <option value="ref_2.mp4">Video 2</option>
+        <option value="ref_3.mp4">Video 3</option>
+        <option value="ref_4.mp4">Video 4</option>
+        <option value="ref_5.mp4">Video 5</option>
+        <option value="ref_6.mp4">Video 6</option>
+
+
+        <!-- Add more options as needed -->
+    </select>
+
+    <button onclick="startDetection()">Start</button>
+
+    <!-- <label for="feedbackThreshold">Feedback Threshold: </label>
+    <input type="number" id="feedbackThreshold" placeholder="Enter threshold" oninput="updateFeedbackThreshold()"> -->
+
+    <p>Select an exercise from the dropdown and press "Start" to begin.</p>
+
+
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/posenet"></script>
+    <script src="app.js"></script>
+</body>
+</html>
+
+
+
+
+
 
 <head>
-    <title>Human Pose Detection</title>
-    <script src="https://unpkg.com/ml5@latest/dist/ml5.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/p5@1.4.0/lib/p5.js"></script>
-    <script src='sketch.js'></script>
+    ...
+    <style>
+        #feedback {
+            color: red;
+            z-index: 3;
+            position: relative; /* changing from absolute to relative */
+            margin-top: 40px;   /* Add space above the feedback */
+            left: 10px;         /* Adjust as necessary */
+        }
+    </style>
+    ...
 </head>
 
-<body>
-    <h1>Human Pose Detection</h1>
-</body>
-
-
-
-
-</html>
