@@ -82,26 +82,22 @@ async function loadPoseNet() {
 //     }
 // }
 
-function drawKeypoints(keypoints, ctx, videoElement) {
-    if (videoElement === webcamElement) {
-        ctx.scale(-1, 1);
-        ctx.translate(-videoElement.width, 0);
-    }
-
+function drawKeypoints(keypoints, ctx, isFlipped = false) {
     ctx.fillStyle = SKELETON_COLOR;
     for (let i = 0; i < keypoints.length; i++) {
         const keypoint = keypoints[i];
+        let x = keypoint.position.x;
+        if (isFlipped) {
+            x = ctx.canvas.width - keypoint.position.x;
+        }
         if (keypoint.score > 0.5) {
             ctx.beginPath();
-            ctx.arc(keypoint.position.x, keypoint.position.y, KEYPOINT_RADIUS, 0, 2 * Math.PI);
+            ctx.arc(x, keypoint.position.y, KEYPOINT_RADIUS, 0, 2 * Math.PI);
             ctx.fill();
         }
     }
-
-    if (videoElement === webcamElement) {
-        ctx.setTransform(1, 0, 0, 1, 0, 0);  // Reset the transformation matrix
-    }
 }
+
 
 
 // function drawSkeleton(keypoints, ctx) {
@@ -119,31 +115,28 @@ function drawKeypoints(keypoints, ctx, videoElement) {
 // }
 
 
-function drawSkeleton(keypoints, ctx, videoElement) {
+function drawSkeleton(keypoints, ctx, isFlipped = false) {
     const adjacentKeyPoints = posenet.getAdjacentKeyPoints(keypoints, 0.5);
 
     ctx.strokeStyle = SKELETON_COLOR;
     ctx.lineWidth = 2;
 
-    // Flip horizontally for the webcam feed
-    if (videoElement === webcamElement) {
-        ctx.save();
-        ctx.scale(-1, 1);
-        ctx.translate(-videoElement.width, 0);
-    }
-
     adjacentKeyPoints.forEach((keypoints) => {
+        let startX = keypoints[0].position.x;
+        let endX = keypoints[1].position.x;
+
+        if (isFlipped) {
+            startX = ctx.canvas.width - keypoints[0].position.x;
+            endX = ctx.canvas.width - keypoints[1].position.x;
+        }
+
         ctx.beginPath();
-        ctx.moveTo(keypoints[0].position.x, keypoints[0].position.y);
-        ctx.lineTo(keypoints[1].position.x, keypoints[1].position.y);
+        ctx.moveTo(startX, keypoints[0].position.y);
+        ctx.lineTo(endX, keypoints[1].position.y);
         ctx.stroke();
     });
-
-    // Restore the context to its original state if it was flipped
-    if (videoElement === webcamElement) {
-        ctx.restore();
-    }
 }
+
 
 
 
@@ -317,13 +310,16 @@ function clearFeedback() {
 
 async function detectPose(videoElement, ctx) {
     const pose = await net.estimateSinglePose(videoElement);
-    
+
+    // Determine if the video feed is flipped (assuming webcamElement is the one being flipped)
+    const isFlipped = videoElement === webcamElement;
+
     if (videoElement === webcamElement) {
         const prerecordedPose = await net.estimateSinglePose(prerecordedElement);
         const difference = calculatePoseDifference(pose, prerecordedPose);
-        
+
         console.log("Pose Difference:", difference);
-        
+
         if (difference > FEEDBACK_THRESHOLD) {
             feedbackCounter++;
             if (feedbackCounter > FEEDBACK_FRAME_THRESHOLD) {
@@ -337,11 +333,15 @@ async function detectPose(videoElement, ctx) {
     }
 
     ctx.clearRect(0, 0, videoElement.width, videoElement.height);
-    drawKeypoints(pose.keypoints, ctx);
-    // drawSkeleton(pose.keypoints, ctx);
-    drawSkeleton(pose.keypoints, ctx, videoElement);
-
+    
+    // Draw keypoints and skeleton based on if the video feed is flipped
+    drawKeypoints(pose.keypoints, ctx, isFlipped);
+    drawSkeleton(pose.keypoints, ctx, isFlipped);
 }
+
+
+
+
 
 
 
