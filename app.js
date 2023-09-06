@@ -31,12 +31,30 @@ function updateFeedbackThreshold() {
 
 
 
+// async function setupCamera() {
+//     webcamElement.width = 640;
+//     webcamElement.height = 480;
+
+//     const stream = await navigator.mediaDevices.getUserMedia({ 'video': true });
+//     webcamElement.srcObject = stream;
+    
+//     return new Promise((resolve) => {
+//         webcamElement.onloadedmetadata = () => {
+//             resolve(webcamElement);
+//         };
+//     });
+// }
+
+
 async function setupCamera() {
     webcamElement.width = 640;
     webcamElement.height = 480;
 
     const stream = await navigator.mediaDevices.getUserMedia({ 'video': true });
     webcamElement.srcObject = stream;
+
+    // Add the flipped class to webcamElement to mirror the video feed
+    webcamElement.classList.add('flipped');
     
     return new Promise((resolve) => {
         webcamElement.onloadedmetadata = () => {
@@ -45,11 +63,31 @@ async function setupCamera() {
     });
 }
 
+
+
+
 async function loadPoseNet() {
     net = await posenet.load();
 }
 
-function drawKeypoints(keypoints, ctx) {
+// function drawKeypoints(keypoints, ctx) {
+//     ctx.fillStyle = SKELETON_COLOR;
+//     for (let i = 0; i < keypoints.length; i++) {
+//         const keypoint = keypoints[i];
+//         if (keypoint.score > 0.5) {
+//             ctx.beginPath();
+//             ctx.arc(keypoint.position.x, keypoint.position.y, KEYPOINT_RADIUS, 0, 2 * Math.PI);
+//             ctx.fill();
+//         }
+//     }
+// }
+
+function drawKeypoints(keypoints, ctx, videoElement) {
+    if (videoElement === webcamElement) {
+        ctx.scale(-1, 1);
+        ctx.translate(-videoElement.width, 0);
+    }
+
     ctx.fillStyle = SKELETON_COLOR;
     for (let i = 0; i < keypoints.length; i++) {
         const keypoint = keypoints[i];
@@ -59,13 +97,40 @@ function drawKeypoints(keypoints, ctx) {
             ctx.fill();
         }
     }
+
+    if (videoElement === webcamElement) {
+        ctx.setTransform(1, 0, 0, 1, 0, 0);  // Reset the transformation matrix
+    }
 }
 
-function drawSkeleton(keypoints, ctx) {
+
+// function drawSkeleton(keypoints, ctx) {
+//     const adjacentKeyPoints = posenet.getAdjacentKeyPoints(keypoints, 0.5);
+
+//     ctx.strokeStyle = SKELETON_COLOR;
+//     ctx.lineWidth = 2;
+
+//     adjacentKeyPoints.forEach((keypoints) => {
+//         ctx.beginPath();
+//         ctx.moveTo(keypoints[0].position.x, keypoints[0].position.y);
+//         ctx.lineTo(keypoints[1].position.x, keypoints[1].position.y);
+//         ctx.stroke();
+//     });
+// }
+
+
+function drawSkeleton(keypoints, ctx, videoElement) {
     const adjacentKeyPoints = posenet.getAdjacentKeyPoints(keypoints, 0.5);
 
     ctx.strokeStyle = SKELETON_COLOR;
     ctx.lineWidth = 2;
+
+    // Flip horizontally for the webcam feed
+    if (videoElement === webcamElement) {
+        ctx.save();
+        ctx.scale(-1, 1);
+        ctx.translate(-videoElement.width, 0);
+    }
 
     adjacentKeyPoints.forEach((keypoints) => {
         ctx.beginPath();
@@ -73,7 +138,13 @@ function drawSkeleton(keypoints, ctx) {
         ctx.lineTo(keypoints[1].position.x, keypoints[1].position.y);
         ctx.stroke();
     });
+
+    // Restore the context to its original state if it was flipped
+    if (videoElement === webcamElement) {
+        ctx.restore();
+    }
 }
+
 
 
 
@@ -134,10 +205,6 @@ function calculatePoseDifference(pose1, pose2) {
 
 
 
-
-
-
-
 let mistakesCounter = {};
 
 let isFeedbackDisplayed = false;
@@ -147,7 +214,7 @@ function displayFeedback(poseDifference, mostOffPart = null) {
     const progressBar = document.getElementById('progressBar');
     
     // Define a constant for the maximum expected pose difference
-    const MAX_POSE_DIFFERENCE = 5000;  // Adjust this value based on your observations
+    const MAX_POSE_DIFFERENCE = 3500;  // Adjust this value based on your observations
     
     // Normalize pose difference to a scale of [0, 100]
     let percentageMatch = 100 * (1 - (poseDifference / MAX_POSE_DIFFERENCE));
@@ -190,7 +257,7 @@ function displayFeedback(poseDifference, mostOffPart = null) {
 
             // Reset the flag after updating the feedback text
             isFeedbackDisplayed = false;
-        }, 500);  // 500ms delay. Adjust this value if you want a longer or shorter delay.
+        }, 1000);  // 500ms delay. Adjust this value if you want a longer or shorter delay.
     }
 
     // Change the progress bar and feedback text color based on the match percentage
@@ -271,8 +338,15 @@ async function detectPose(videoElement, ctx) {
 
     ctx.clearRect(0, 0, videoElement.width, videoElement.height);
     drawKeypoints(pose.keypoints, ctx);
-    drawSkeleton(pose.keypoints, ctx);
+    // drawSkeleton(pose.keypoints, ctx);
+    drawSkeleton(pose.keypoints, ctx, videoElement);
+
 }
+
+
+
+
+
 
 async function bindPage() {
     await setupCamera();
